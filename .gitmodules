@@ -1,3 +1,6 @@
 [submodule "ext/mtk"]
 	path = ext/mtk
 	url = git@github.com:umegaya/grpc-mtk.git
+[submodule "ext/mono"]
+	path = ext/mono
+	url = https://github.com/mono/mono
