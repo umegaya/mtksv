@@ -62,8 +62,8 @@ bool Config::FileValue(const std::string &key, std::string &value) {
 			return false;
 		}
 		char buffer[st.st_size];
-		fread(buffer, 1, st.st_size, fp);
-		value = std::string(buffer, st.st_size);
+		auto sz = fread(buffer, 1, st.st_size, fp);
+		value = std::string(buffer, sz);
 		return true;
 	}
 }
