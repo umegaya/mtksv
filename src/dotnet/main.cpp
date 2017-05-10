@@ -7,7 +7,9 @@ int main(int argc, char *argv[]) {
 	c.Parse(argc, argv);
 	c.ConfigFileValue("c", "name", "value");
 
-	mtk::Server sv(c, new mtk::MonoHandler());
+	auto h = new mtk::MonoHandler();
+	h->Init(c.Value<std::string>("a", "no_such_file"));
+	mtk::Server sv(c, h);
 	sv.Run();
 	return 0;
 }

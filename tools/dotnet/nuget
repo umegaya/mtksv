@@ -1,0 +1,4 @@
+#!/bin/bash
+
+mono /usr/local/lib/mono/nuget/NuGet.exe $@
+
