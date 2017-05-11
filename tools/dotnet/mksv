@@ -1,10 +1,8 @@
 #!/bin/bash
 
-echo "build mtk dll"
 mcs -unsafe -r:/usr/local/lib/mono/nuget/Google.Protobuf.3.3.0/lib/net45/Google.Protobuf.dll -t:library -out:Mtk.dll \
 	/codes/Mtk/*.cs
 
-echo "build server assembly"
 mcs -unsafe -r:/usr/local/lib/mono/nuget/Google.Protobuf.3.3.0/lib/net45/Google.Protobuf.dll -t:library -r:/Mtk.dll -out:$1/Server.dll \
 	/codes/Server/*.cs /codes/Server/*/*.cs /codes/Server/*/*/*.cs
 

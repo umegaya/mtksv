@@ -28,8 +28,8 @@ runtime-dotnet:
 	@echo "TODO: pack result binary into smaller container"
 
 image-dotnet:
-	mkdir -p `pwd`/$(DOTNET_OUT)
-	docker run --rm -ti -v $(SVDIR):/codes/Server \
+	@mkdir -p `pwd`/$(DOTNET_OUT)
+	@docker run --rm -ti -v $(SVDIR):/codes/Server \
 		-v `pwd`/ext/mtk/bindings/csharp:/codes/Mtk -v `pwd`/tools/dotnet:/mtk/bin -v `pwd`/$(DOTNET_OUT):/tmp/out \
 		$(BUILDER_IMG)-dotnet bash /mtk/bin/mksv /tmp/out
 	@echo "create container which adds $(DOTNET_OUT)/Server.dll into mtktools/runtime-dotnet"
