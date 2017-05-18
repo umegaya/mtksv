@@ -1,35 +1,31 @@
-BUILDER_IMG=mtktool/builder
-DOTNET_OUT=build/server/dotnet
+SERVER_SRC_ROOT=../../src
+BUILDER_PREFIX=mtktool/builder
+BUILDER_BUILD_DIR=container/builder
+RUNTIME_PREFIX=mtktool/runtime
+RUNTIME_BUILD_DIR=container/runtime
+IMAGE_BUILD_DIR=container/image
 
 # build dotnet server
-mono: 
-	cd ext/mono && ./autogen.sh --disable-nls && make && make install
-	apt-get update && apt-get install -y --no-install-recommends ca-certificates-mono
-	cert-sync /etc/ssl/certs/ca-certificates.crt && rm -rf /var/lib/apt/lists/*
-	mkdir -p /usr/local/lib/mono/nuget
-	curl -o /usr/local/lib/mono/nuget/NuGet.exe -L https://github.com/NuGet/Home/releases/download/3.3/NuGet.exe
-	mkdir -p /tmp/mtk-tools && cp /mtksv/tools/dotnet/* /tmp/mtk-tools/ && chmod 755 /tmp/mtk-tools/*
-	mv /tmp/mtk-tools/* /usr/local/bin/ && rm -r /tmp/mtk-tools
-	nuget config -set repositoryPath=/usr/local/lib/mono/nuget
-	nuget install Google.Protobuf
+mtk:
+	make -C ext/mtk linux
 
 builder-dotnet:
-	docker run --name builder-dotnet -ti -v `pwd`:/mtksv $(BUILDER_IMG) bash -c "cd mtksv && make mono"
-	docker commit builder-dotnet $(BUILDER_IMG)-dotnet
-	docker kill builder-dotnet && doker rm builder-dotnet
+	docker build -t $(BUILDER_PREFIX)-dotnet $(BUILDER_BUILD_DIR)/dotnet
 
-compile-dotnet: 
-	make -C ext/mtk linux
+compile-dotnet: mtk
 	- mkdir -p build/dotnet
-	cd build/dotnet && cmake $(SERVER_ROOT)/dotnet && make
+	cd build/dotnet && cmake $(SERVER_SRC_ROOT)/dotnet && make
 
+DOTNET_OUT=build/dotnet
 runtime-dotnet:
-	docker run --rm -ti -v `pwd`:/mtksv $(BUILDER_IMG)-dotnet bash -c "cd mtksv && make compile-dotnet"
-	@echo "TODO: pack result binary into smaller container"
+	docker run --rm -ti -v `pwd`:/mtksv $(BUILDER_PREFIX)-dotnet bash -c "cd mtksv && make compile-dotnet"
+	@mv $(DOTNET_OUT)/mtkdn $(RUNTIME_BUILD_DIR)/dotnet
+	@mv $(DOTNET_OUT)/stub/libserver.so $(RUNTIME_BUILD_DIR)/dotnet
+	docker build -t mtktool/runtime-dotnet $(RUNTIME_BUILD_DIR)/dotnet
 
 image-dotnet:
-	@mkdir -p `pwd`/$(DOTNET_OUT)
-	@docker run --rm -ti -v $(SVDIR):/codes/Server \
-		-v `pwd`/ext/mtk/bindings/csharp:/codes/Mtk -v `pwd`/tools/dotnet:/mtk/bin -v `pwd`/$(DOTNET_OUT):/tmp/out \
-		$(BUILDER_IMG)-dotnet bash /mtk/bin/mksv /tmp/out
-	@echo "create container which adds $(DOTNET_OUT)/Server.dll into mtktools/runtime-dotnet"
+	@mkdir -p $(DOTNET_OUT)/server
+	docker run --rm -ti -v $(SVDIR):/codes/Server -v `pwd`/ext/mtk/bindings/csharp:/codes/Mtk -v `pwd`/tools/dotnet:/mtk/bin -v `pwd`/$(DOTNET_OUT)/server:/tmp/out \
+		$(BUILDER_PREFIX)-dotnet make -C /mtk/bin lib
+	@mv $(DOTNET_OUT)/server/libserver.so $(IMAGE_BUILD_DIR)/dotnet
+	docker build -t $(IMAGE) $(IMAGE_BUILD_DIR)/dotnet

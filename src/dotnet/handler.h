@@ -2,9 +2,12 @@
 
 #include "mtk/src/conn.h"
 
-//#include <glib/glib.h>
 #include <mono/jit/jit.h>
 #include <mono/metadata/assembly.h>
+
+extern "C" {
+	void mono_mkbundle_init();
+}
 
 namespace mtk {
 class MonoHandler : public IHandler {
@@ -13,14 +16,18 @@ class MonoHandler : public IHandler {
 public:
 	MonoHandler() {}
 	bool Init(const std::string &filename) {
+		mono_mkbundle_init();
 		domain_ = mono_jit_init("mtk");
 		if (domain_ == nullptr) {
+			LOG(error, "fail to init domain");
 			return false;
 		}
-		assembly_ = mono_domain_assembly_open(domain_, filename.c_str());
+		assembly_ = mono_domain_assembly_open(domain_, "Server.dll");
 		if (assembly_ == nullptr) {
+			LOG(error, "fail to load assembly");
 			return false;
 		}
+		LOG(info, "init success");
 		return true;
 	}
 	grpc::Status Handle(Conn *c, Request &req) {
