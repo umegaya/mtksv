@@ -5,27 +5,56 @@ RUNTIME_PREFIX=mtktool/runtime
 RUNTIME_BUILD_DIR=container/runtime
 IMAGE_BUILD_DIR=container/image
 
-# build dotnet server
+# common function
+define build_builder
+	docker build -t $(BUILDER_PREFIX)-$1 $(BUILDER_BUILD_DIR)/$1
+endef
+
+define build_runtime
+	docker run --rm -ti -v `pwd`:/mtksv $(BUILDER_PREFIX)-$1 bash -c "cd mtksv && make compile-$1"
+	bash $(RUNTIME_BUILD_DIR)/$1/setup.sh
+	docker build -t $(RUNTIME_PREFIX)-$1 $(RUNTIME_BUILD_DIR)/$1
+endef
+
+define build_image
+	bash $(IMAGE_BUILD_DIR)/$1/build.sh $3
+	docker build -t $2 $(IMAGE_BUILD_DIR)/$1
+endef
+
+define compile
+	- mkdir -p build/$1
+	cd build/$1 && cmake $(SERVER_SRC_ROOT)/$1 && make
+endef
+
+
+# build base runtime
 mtk:
 	make -C ext/mtk linux
 
+
+# build dotnet server
 builder-dotnet:
-	docker build -t $(BUILDER_PREFIX)-dotnet $(BUILDER_BUILD_DIR)/dotnet
+	$(call build_builder,dotnet)
 
 compile-dotnet: mtk
-	- mkdir -p build/dotnet
-	cd build/dotnet && cmake $(SERVER_SRC_ROOT)/dotnet && make
+	$(call compile,dotnet)
 
-DOTNET_OUT=build/dotnet
 runtime-dotnet:
-	docker run --rm -ti -v `pwd`:/mtksv $(BUILDER_PREFIX)-dotnet bash -c "cd mtksv && make compile-dotnet"
-	@mv $(DOTNET_OUT)/mtkdn $(RUNTIME_BUILD_DIR)/dotnet
-	@mv $(DOTNET_OUT)/stub/libserver.so $(RUNTIME_BUILD_DIR)/dotnet
-	docker build -t mtktool/runtime-dotnet $(RUNTIME_BUILD_DIR)/dotnet
+	$(call build_runtime,dotnet)
 
 image-dotnet:
-	@mkdir -p $(DOTNET_OUT)/server
-	docker run --rm -ti -v $(SVDIR):/codes/Server -v `pwd`/ext/mtk/bindings/csharp:/codes/Mtk -v `pwd`/tools/dotnet:/mtk/bin -v `pwd`/$(DOTNET_OUT)/server:/tmp/out \
-		$(BUILDER_PREFIX)-dotnet make -C /mtk/bin lib
-	@mv $(DOTNET_OUT)/server/libserver.so $(IMAGE_BUILD_DIR)/dotnet
-	docker build -t $(IMAGE) $(IMAGE_BUILD_DIR)/dotnet
+	$(call build_image,dotnet,$(IMAGE),$(SVDIR))
+
+
+# build coreclr server
+builder-msdn:
+	$(call build_builder,msdn)
+
+compile-msdn: mtk
+	$(call compile,msdn)
+
+runtime-msdn:
+	$(call build_runtime,msdn)
+
+image-msdn:
+	$(call build_image,msdn,$(IMAGE),$(SVDIR))
