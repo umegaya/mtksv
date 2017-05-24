@@ -3,13 +3,13 @@
 #include "config.h"
 
 int main(int argc, char *argv[]) {
-	mtk::Config c;
-	c.Parse(argc, argv);
-	c.ConfigFileValue("c", "name", "value");
-
 	auto h = new mtk::MonoHandler();
-	h->Init(c.Value<std::string>("a", "no_such_file"));
-	mtk::Server sv(c, h);
-	sv.Run();
+	auto sv = std::unique_ptr<mtk::Server>(h->Init(argc, argv));
+	if (sv == nullptr) {
+		LOG(fatal, "fail to start mtkdn");
+		delete h;
+		return -1;
+	}
+	sv->Run();
 	return 0;
 }

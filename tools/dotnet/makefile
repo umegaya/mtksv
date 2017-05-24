@@ -6,7 +6,7 @@ OUTDIR=/tmp/out
 LIB=$(OUTDIR)/libserver.so
 
 # build server logic assemly
-MCSFLAGS=-unsafe -t:library
+MCSFLAGS=-unsafe -t:library -define:MTKSV
 CODE=/codes
 DEPS=-r:/usr/lib/mono/nuget/Google.Protobuf.3.3.0/lib/net45/Google.Protobuf.dll
 MTK_DLL=$(OUTDIR)/Mtk.dll
