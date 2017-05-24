@@ -54,12 +54,18 @@ public:
 		}
 	}
 	mtk_cid_t Login(Conn *c, Request &req, MemSlice &s) override {
+		SystemPayload::Connect creq;
+		if (Codec::Unpack((const uint8_t *)req.payload().c_str(), req.payload().length(), creq) < 0) {
+			LOG(error, "Login callback invalid payload");
+			return 0;
+		}
 		MonoObject *obj;
-		void *args[4] = {
+		void *args[5] = {
 			/* ulong cid, byte* data, uint len, out byte[] repdata */
-			(void *)c->Id(), 
-			(void *)(intptr_t)req.type(), 
-			(void *)req.payload().data(),
+			(void *)c,
+			(void *)creq.id(), 
+			(void *)creq.payload().data(),
+			(void *)(intptr_t)creq.payload().length(),
 			(void *)&obj,
 		};
 		MonoObject *exc, *ret = mono_runtime_invoke(handle_, nullptr, args, &exc);
@@ -76,7 +82,7 @@ public:
 	}
 protected:
 	void AddInternalCalls();
-	mtk::Server *NewServer(Server::Address *, Server::Config *);
+	static mtk::Server *NewServer(Server::Address *, Server::Config *);
 	MonoMethod *FindMethod(const std::string &name);
 	MonoArray *FromArgs(int argc, char *argv[]);
 };
