@@ -36,7 +36,7 @@ mtk:
 builder-dotnet:
 	$(call build_builder,dotnet)
 
-compile-dotnet: mtk
+compile-dotnet: 
 	$(call compile,dotnet)
 
 runtime-dotnet:
@@ -44,6 +44,9 @@ runtime-dotnet:
 
 image-dotnet:
 	$(call build_image,dotnet,$(IMAGE),$(SVDIR))
+
+shell-dotnet:
+	docker run --rm -ti -v `pwd`:/mtksv --privileged mtktool/builder-dotnet bash
 
 
 # build coreclr server

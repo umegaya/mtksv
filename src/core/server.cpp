@@ -7,12 +7,15 @@
 
 namespace mtk {
 static std::string s_localhost = "0.0.0.0:50051";
-bool Server::LoadFile(const std::string &path, std::string &content) {
-    struct stat st;
-    if (stat(path.c_str(), &st) != 0) {
+bool Server::LoadFile(const char *path, std::string &content) {
+    if (path == nullptr) {
         return false;
     }
-    FILE *fp = fopen(path.c_str(), "r");
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        return false;
+    }
+    FILE *fp = fopen(path, "r");
     if (fp == nullptr) {
         return false;
     }
@@ -54,9 +57,9 @@ Server::~Server() {
 Server &Server::SetAddress(const Address &a) { 
     address_ = {
         .host = strdup(a.host),
-        .cert = strdup(a.cert),
-        .key = strdup(a.key),
-        .ca = strdup(a.ca),
+        .cert = a.cert == nullptr ? nullptr : strdup(a.cert),
+        .key = a.cert == nullptr ? nullptr : strdup(a.key),
+        .ca = a.cert == nullptr ? nullptr : strdup(a.ca),
     };
     return *this; 
 }

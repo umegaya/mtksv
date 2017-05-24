@@ -21,6 +21,6 @@ public:
 	inline Server &SetHandler(IHandler *h) { handler_ = h; return *this; }
 
 	static bool CreateCred(const Address &c, CredOptions &options);
-	static bool LoadFile(const std::string &path, std::string &content);
+	static bool LoadFile(const char *path, std::string &content);
 };
 }

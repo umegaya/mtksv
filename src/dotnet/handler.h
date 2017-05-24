@@ -11,13 +11,12 @@
 
 extern "C" {
 	void mono_mkbundle_init();
+	void *mtkdn_server(mtk_addr_t*, mtk_svconf_t*);
 }
 
 namespace mtk {
 class MonoHandler : public IHandler {
 	MonoDomain *domain_;
-	MonoAssembly *assembly_;
-	MonoImage *image_;
 	MonoMethod *login_, *handle_, *close_;
 	static thread_local MonoThread *thread_;
 public:
@@ -38,6 +37,7 @@ public:
 		MonoObject *exc, *ret = mono_runtime_invoke(handle_, nullptr, args, &exc);
 		if (exc != nullptr) {
 			LOG(error, "Handle callback exception raised");
+			DumpException(exc);
 			return grpc::Status::CANCELLED;
 		}
 		return grpc::Status::OK;
@@ -51,6 +51,7 @@ public:
 		mono_runtime_invoke(handle_, nullptr, args, &exc);
 		if (exc != nullptr) {
 			LOG(error, "Close callback exception raised");
+			DumpException(exc);
 		}
 	}
 	mtk_cid_t Login(Conn *c, Request &req, MemSlice &s) override {
@@ -71,6 +72,7 @@ public:
 		MonoObject *exc, *ret = mono_runtime_invoke(handle_, nullptr, args, &exc);
 		if (exc != nullptr) {
 			LOG(error, "Login callback exception raised");
+			DumpException(exc);
 			return 0;
 		}
 		MonoArray *a = (MonoArray *)obj;
@@ -80,10 +82,11 @@ public:
 	Conn *NewConn(Worker *worker, IHandler *handler) {
 		return new Conn(worker, handler);
 	}
+	static Server *NewServer(Server::Address *, Server::Config *);
 protected:
 	void AddInternalCalls();
-	static mtk::Server *NewServer(Server::Address *, Server::Config *);
-	MonoMethod *FindMethod(const std::string &name);
+	static MonoMethod *FindMethod(MonoClass *klass, const std::string &name);
+	static void DumpException(MonoObject *exc);
 	MonoArray *FromArgs(int argc, char *argv[]);
 };
 }
