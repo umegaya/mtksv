@@ -27,16 +27,19 @@ public:
 	void TlsInit(Worker *w);
 	void TlsFin(Worker *w);
 	grpc::Status Handle(Conn *c, Request &req) override {
+		auto type = req.type();
+		auto data = req.payload().data();
+		auto dlen = req.payload().length();
 		void *args[4] = {
 			/* System.IntPtr c, int type, byte* data, uint len */
-			(void *)c, 
-			(void *)(intptr_t)req.type(), 
-			(void *)req.payload().data(),
-			(void *)(intptr_t)req.payload().length(),
+			(void *)&c, 
+			(void *)&type, 
+			(void *)data,
+			(void *)&dlen,
 		};
 		MonoObject *exc, *ret = mono_runtime_invoke(handle_, nullptr, args, &exc);
 		if (exc != nullptr) {
-			LOG(error, "Handle callback exception raised");
+			LOG(error, "ev:Handle callback exception raised");
 			DumpException(exc);
 			return grpc::Status::CANCELLED;
 		}
@@ -45,34 +48,39 @@ public:
 	void Close(Conn *c) override {
 		void *args[4] = {
 			/* System.IntPtr c */
-			(void *)c, 
+			(void *)&c, 
 		};
 		MonoObject *exc;
-		mono_runtime_invoke(handle_, nullptr, args, &exc);
+		mono_runtime_invoke(close_, nullptr, args, &exc);
 		if (exc != nullptr) {
-			LOG(error, "Close callback exception raised");
+			LOG(error, "ev:Close callback exception raised");
 			DumpException(exc);
 		}
 	}
 	mtk_cid_t Login(Conn *c, Request &req, MemSlice &s) override {
 		SystemPayload::Connect creq;
 		if (Codec::Unpack((const uint8_t *)req.payload().c_str(), req.payload().length(), creq) < 0) {
-			LOG(error, "Login callback invalid payload");
+			LOG(error, "ev:Login callback invalid payload");
 			return 0;
 		}
 		MonoObject *obj;
+		auto cid = creq.id();
+		auto data = creq.payload().data();
+		auto dlen = creq.payload().length();
+		LOG(info, "login payload len:{},p:{}", dlen, (void *)data);
 		void *args[5] = {
 			/* ulong cid, byte* data, uint len, out byte[] repdata */
-			(void *)c,
-			(void *)creq.id(), 
-			(void *)creq.payload().data(),
-			(void *)(intptr_t)creq.payload().length(),
+			(void *)&c,
+			(void *)&cid,
+			(void *)data,
+			(void *)&dlen,
 			(void *)&obj,
 		};
-		MonoObject *exc, *ret = mono_runtime_invoke(handle_, nullptr, args, &exc);
+		MonoObject *exc, *ret = mono_runtime_invoke(login_, nullptr, args, &exc);
 		if (exc != nullptr) {
-			LOG(error, "Login callback exception raised");
+			LOG(error, "ev:Login callback exception raised");
 			DumpException(exc);
+			mtk_svconn_close(c);
 			return 0;
 		}
 		MonoArray *a = (MonoArray *)obj;
@@ -87,6 +95,7 @@ protected:
 	void AddInternalCalls();
 	static MonoMethod *FindMethod(MonoClass *klass, const std::string &name);
 	static void DumpException(MonoObject *exc);
+	static MonoObject *CallVirtual(MonoObject *self, const char *method, void *args[], int n_args);
 	MonoArray *FromArgs(int argc, char *argv[]);
 };
 }

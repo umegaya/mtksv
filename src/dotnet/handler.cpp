@@ -3,7 +3,6 @@
 extern "C" {
 	void mono_object_describe_fields (MonoObject *obj);
 }
-
 void *mtkdn_server(mtk_addr_t *a, mtk_svconf_t *c) {
 	return mtk::MonoHandler::NewServer(a, c);
 }
@@ -92,8 +91,73 @@ MonoArray *MonoHandler::FromArgs(int argc, char *argv[]) {
 	}
 	return a;
 }
+MonoObject *MonoHandler::CallVirtual(MonoObject *self, const char *method, void *args[], int n_args) {
+	auto klass = mono_object_get_class(self);
+	if (klass == nullptr) {
+		LOG(error, "ev:CallVirtual fail to get class");
+		mono_object_describe_fields(self);
+		ASSERT(false);
+		return nullptr;
+	}
+	auto kname = mono_class_get_name(klass);
+	auto virt_method = mono_class_get_method_from_name(klass, method, n_args);
+	if (virt_method == nullptr) {
+		if (n_args <= 0) {
+			auto prop = mono_class_get_property_from_name (klass, method);
+			virt_method = mono_property_get_get_method (prop);
+		}
+		if (virt_method == nullptr) {
+			LOG(error, "ev:CallVirtual fail to get method,class:{},method:{}", kname, method);
+			mono_object_describe_fields(self);
+			ASSERT(false);
+			return nullptr;
+		}
+	}
+	virt_method = mono_object_get_virtual_method(self, virt_method);
+	if (virt_method == nullptr) {
+		LOG(error, "ev:CallVirtual fail to get virtual method,class:{},method:{}", kname, method);
+		mono_object_describe_fields(self);
+		ASSERT(false);
+		return nullptr;
+	}
+	MonoObject *exc = nullptr;
+	auto obj = mono_runtime_invoke(virt_method, self, args, &exc);
+	if (exc != nullptr) {
+		LOG(error, "ev:CallVirtual exception raised,class:{},method:{}", kname, method);
+		mono_object_describe_fields(exc);
+		return nullptr;
+	}
+	return obj;
+}
 void MonoHandler::DumpException(MonoObject *exc) {
-	mono_object_describe_fields(exc);
+	MonoObject *pexc;
+	while (true) {
+		pexc = CallVirtual(exc, "InnerException", nullptr, 0);
+		if (pexc == nullptr) {
+			break;
+		} else {
+			exc = pexc;
+		}
+	}
+	auto msg = CallVirtual(exc, "Message", nullptr, 0), 
+		 stack = CallVirtual(exc, "StackTrace", nullptr, 0);
+	if (msg == nullptr) {
+		LOG(error, "ev:fail to get data from exception");
+		mono_object_describe_fields(exc);
+		return;
+	}
+	//mono_object_describe_fields(exc);
+	if (stack != nullptr) {
+		auto msgstr = mono_string_to_utf8((MonoString *)msg), 
+			 stkstr = mono_string_to_utf8((MonoString *)stack);
+		LOG(error, "ev:mono exception,msg:{},at:{}", msgstr, stkstr);
+		mono_free(msgstr); 
+		mono_free(stkstr);
+	} else {
+		auto msgstr = mono_string_to_utf8((MonoString *)msg);
+		LOG(error, "ev:mono exception,msg:{}", msgstr);
+		mono_free(msgstr); 
+	}
 }
 thread_local MonoThread *MonoHandler::thread_;
 mtk::Server *MonoHandler::Init(int argc, char *argv[]) {
