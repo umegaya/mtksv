@@ -11,7 +11,7 @@
 
 extern "C" {
 	void mono_mkbundle_init();
-	void *mtkdn_server(mtk_addr_t*, mtk_svconf_t*);
+	void *mtkdn_server(mtk_addr_t*, int, mtk_svconf_t*);
 }
 
 namespace mtk {
@@ -90,7 +90,7 @@ public:
 	Conn *NewConn(Worker *worker, IHandler *handler) {
 		return new Conn(worker, handler);
 	}
-	static Server *NewServer(Server::Address *, Server::Config *);
+	static Server *NewServer(Server::Address *, int, Server::Config *);
 protected:
 	void AddInternalCalls();
 	static MonoMethod *FindMethod(MonoClass *klass, const std::string &name);

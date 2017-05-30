@@ -3,8 +3,8 @@
 extern "C" {
 	void mono_object_describe_fields (MonoObject *obj);
 }
-void *mtkdn_server(mtk_addr_t *a, mtk_svconf_t *c) {
-	return mtk::MonoHandler::NewServer(a, c);
+void *mtkdn_server(mtk_addr_t *a, int n_addr, mtk_svconf_t *c) {
+	return mtk::MonoHandler::NewServer(a, n_addr, c);
 }
 
 namespace mtk {
@@ -65,9 +65,9 @@ void MonoHandler::AddInternalCalls() {
     EXPORT_MTK_LIB(conn_watch);
     EXPORT_MTK_LIB(conn_connected);			//TODO: to internal call
 }
-mtk::Server *MonoHandler::NewServer(Server::Address *a, Server::Config *c) {
+mtk::Server *MonoHandler::NewServer(Server::Address *a, int n_addr, Server::Config *c) {
 	auto *sv = new mtk::Server();
-	sv->SetAddress(*a).SetConfig(*c);
+	sv->SetAddress(a, n_addr).SetConfig(*c);
 	return sv;
 }
 MonoMethod *MonoHandler::FindMethod(MonoClass *klass, const std::string &name) {
