@@ -1,5 +1,7 @@
 #include "handler.h"
 #include "mtk/src/mtk.h"
+#include <stdlib.h>
+
 extern "C" {
 	void mono_object_describe_fields (MonoObject *obj);
 }
@@ -129,6 +131,20 @@ MonoObject *MonoHandler::CallVirtual(MonoObject *self, const char *method, void 
 	}
 	return obj;
 }
+MonoClass *MonoHandler::GetLogicClass(MonoImage *image) {
+	const char *klass_name = getenv("MTKSV_LOGIC");
+	if (klass_name == nullptr) {
+		LOG(error, "fail to get logic class");
+		return nullptr;
+	} 
+	const char *find = strrchr(klass_name, '.');
+	size_t sz = find - klass_name;
+	char ns[sz + 1];
+	strncpy(ns, klass_name, sz);
+	ns[sz] = 0;
+	LOG(info, "find class by ns:{}, class:{}", (char *)ns, (char *)find + 1);
+	return mono_class_from_name(image, ns, find + 1); 
+}
 void MonoHandler::DumpException(MonoObject *exc) {
 	MonoObject *pexc;
 	while (true) {
@@ -211,33 +227,48 @@ mtk::Server *MonoHandler::Init(int argc, char *argv[]) {
 		LOG(error, "fail to get server image");
 		return nullptr;
 	}
-	entrypoint = mono_class_from_name(image, "Mtk", "EntryPoint"); 
-	if (entrypoint == nullptr) {
-		LOG(error, "fail to get entrypoint");
-		return nullptr;
+	{	
+		//create logic class
+		auto logic_class = GetLogicClass(image);
+		if (logic_class == nullptr) {
+			LOG(error, "fail to get logic class");
+			return nullptr;		
+		}
+		MonoMethod *factory;
+		if ((factory = FindMethod(logic_class, "Instance")) == nullptr) {
+			LOG(error, "logic class does not have factory method (Instance)");
+			return nullptr;
+		}
+		MonoObject *err = nullptr;
+		if ((logic_ = mono_runtime_invoke(factory, nullptr, nullptr, &err)) == nullptr || err != nullptr) {
+			LOG(error, "fail ot call method bootstrap {} {}", (void *)logic_, (void *)err);
+			DumpException(err);
+			return nullptr;
+		}
 	}
-
-	//create server instance
-	MonoMethod *bootstrap;
-	if ((bootstrap = FindMethod(entrypoint, "Bootstrap")) == nullptr) {
-		LOG(error, "fail ot get method bootstrap");
-		return nullptr;
+	{
+		//create server instance with logic class
+		MonoMethod *bootstrap;
+		if ((bootstrap = FindMethod(entrypoint, "Bootstrap")) == nullptr) {
+			LOG(error, "fail ot get method bootstrap");
+			return nullptr;
+		}
+		MonoObject *svptr, *err = nullptr;
+		void *args[2] = { (void *)logic_, (void *)FromArgs(argc, argv) };
+		if ((svptr = mono_runtime_invoke(bootstrap, nullptr, args, &err)) == nullptr || err != nullptr) {
+			LOG(error, "fail ot call method bootstrap {} {}", (void *)svptr, (void *)err);
+			DumpException(err);
+			return nullptr;
+		}
+		mtk::Server *sv = (mtk::Server *)*(intptr_t *)mono_object_unbox(svptr);
+		if (sv == nullptr) {
+			LOG(error, "bootstrap fail to create server");
+			return nullptr;
+		}
+		//mono code does not seems to destroy MonoArray. its handled by gc?
+		LOG(info, "ev:mono handler init success,sv:{}", (void *)sv);
+		return &(sv->SetHandler(this));
 	}
-	MonoObject *svptr, *err = nullptr;
-	void *args[1] = { (void *)FromArgs(argc, argv) };
-	if ((svptr = mono_runtime_invoke(bootstrap, nullptr, args, &err)) == nullptr || err != nullptr) {
-		LOG(error, "fail ot call method bootstrap {} {}", (void *)svptr, (void *)err);
-		DumpException(err);
-		return nullptr;
-	}
-	mtk::Server *sv = (mtk::Server *)*(intptr_t *)mono_object_unbox(svptr);
-	if (sv == nullptr) {
-		LOG(error, "bootstrap fail to create server");
-		return nullptr;
-	}
-	//mono code does not seems to destroy MonoArray. its handled by gc?
-	LOG(info, "ev:mono handler init success,sv:{}", (void *)sv);
-	return &(sv->SetHandler(this));
 }
 void MonoHandler::TlsInit(Worker *w) {
 	thread_ = mono_thread_attach(domain_);

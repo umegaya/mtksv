@@ -17,6 +17,7 @@ extern "C" {
 namespace mtk {
 class MonoHandler : public IHandler {
 	MonoDomain *domain_;
+	MonoObject *logic_;
 	MonoMethod *login_, *handle_, *close_;
 	static thread_local MonoThread *thread_;
 public:
@@ -30,8 +31,9 @@ public:
 		auto type = req.type();
 		auto data = req.payload().data();
 		auto dlen = req.payload().length();
-		void *args[4] = {
-			/* System.IntPtr c, int type, byte* data, uint len */
+		void *args[5] = {
+			/* logic, System.IntPtr c, int type, byte* data, uint len */
+			(void *)logic_,
 			(void *)&c, 
 			(void *)&type, 
 			(void *)data,
@@ -46,8 +48,9 @@ public:
 		return grpc::Status::OK;
 	}
 	void Close(Conn *c) override {
-		void *args[4] = {
-			/* System.IntPtr c */
+		void *args[2] = {
+			/* logic, System.IntPtr c */
+			(void *)logic_,
 			(void *)&c, 
 		};
 		MonoObject *exc;
@@ -68,8 +71,9 @@ public:
 		auto data = creq.payload().data();
 		auto dlen = creq.payload().length();
 		LOG(info, "login payload len:{},p:{}", dlen, (void *)data);
-		void *args[5] = {
-			/* ulong cid, byte* data, uint len, out byte[] repdata */
+		void *args[6] = {
+			/* logic, ulong cid, byte* data, uint len, out byte[] repdata */
+			(void *)logic_,
 			(void *)&c,
 			(void *)&cid,
 			(void *)data,
@@ -96,6 +100,7 @@ protected:
 	static MonoMethod *FindMethod(MonoClass *klass, const std::string &name);
 	static void DumpException(MonoObject *exc);
 	static MonoObject *CallVirtual(MonoObject *self, const char *method, void *args[], int n_args);
+	static MonoClass *GetLogicClass(MonoImage *image);
 	MonoArray *FromArgs(int argc, char *argv[]);
 };
 }
