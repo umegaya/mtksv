@@ -14,6 +14,23 @@ namespace mtk {
 #define EXPORT_MTK_LIB(method) { \
 	mono_add_internal_call(MTKLIB_NS"::mtkdn_"#method, (void *)&mtk_##method); \
 }
+#define DO(stmt, ...) { \
+	if ((stmt) == nullptr) { \
+		LOG(error, __VA_ARGS__); \
+		return nullptr; \
+	} \
+}
+#define INVOKE(stmt, err, ...) { \
+	err = nullptr; \
+	if ((stmt) == nullptr || err != nullptr) { \
+		LOG(error, __VA_ARGS__); \
+		DumpException(err); \
+		return nullptr; \
+	} \
+}
+
+thread_local MonoThread *MonoHandler::thread_;
+
 void MonoHandler::AddInternalCalls() {
 	//utils
 	EXPORT_MTK_LIB(queue_pop);			//TODO: to internal call
@@ -134,7 +151,7 @@ MonoObject *MonoHandler::CallVirtual(MonoObject *self, const char *method, void 
 MonoClass *MonoHandler::GetLogicClass(MonoImage *image) {
 	const char *klass_name = getenv("MTKSV_LOGIC");
 	if (klass_name == nullptr) {
-		LOG(error, "fail to get logic class");
+		LOG(error, "ev:fail to get logic class");
 		return nullptr;
 	} 
 	const char *find = strrchr(klass_name, '.');
@@ -142,7 +159,6 @@ MonoClass *MonoHandler::GetLogicClass(MonoImage *image) {
 	char ns[sz + 1];
 	strncpy(ns, klass_name, sz);
 	ns[sz] = 0;
-	LOG(info, "find class by ns:{}, class:{}", (char *)ns, (char *)find + 1);
 	return mono_class_from_name(image, ns, find + 1); 
 }
 void MonoHandler::DumpException(MonoObject *exc) {
@@ -175,107 +191,83 @@ void MonoHandler::DumpException(MonoObject *exc) {
 		mono_free(msgstr); 
 	}
 }
-thread_local MonoThread *MonoHandler::thread_;
 mtk::Server *MonoHandler::Init(int argc, char *argv[]) {
 	mono_mkbundle_init();
 	AddInternalCalls();
-	domain_ = mono_jit_init("mtkdn");
-	if (domain_ == nullptr) {
-		LOG(error, "fail to init domain");
-		return nullptr;
-	}
-	thread_ = mono_thread_attach(domain_);
-	if (thread_ == nullptr) {
-		LOG(error, "fail to attach thread");
-		return nullptr;
-	}
-	auto assembly = mono_domain_assembly_open(domain_, "Mtk.dll");
-	if (assembly == nullptr) {
-		LOG(error, "fail to load mtk assembly");
-		return nullptr;
-	}
-	auto image = mono_assembly_get_image(assembly);
-	if (image == nullptr) {
-		LOG(error, "fail to get mtk image");
-		return nullptr;
-	}
-	auto entrypoint = mono_class_from_name(image, "Mtk", "EntryPointBase"); 
-	if (entrypoint == nullptr) {
-		LOG(error, "fail to get entrypointbase");
-		return nullptr;
-	}
-	if ((close_ = FindMethod(entrypoint, "Close")) == nullptr) {
-		LOG(error, "fail ot get method close_");
-		return nullptr;
-	}
-	if ((login_ = FindMethod(entrypoint, "Login")) == nullptr) {
-		LOG(error, "fail ot get method login");
-		return nullptr;
-	}
-	if ((handle_ = FindMethod(entrypoint, "Handle")) == nullptr) {
-		LOG(error, "fail ot get method handle_");
-		return nullptr;
-	}
 
-	assembly = mono_domain_assembly_open(domain_, "Server.dll");
-	if (assembly == nullptr) {
-		LOG(error, "fail to load server assembly");
-		return nullptr;
-	}
-	image = mono_assembly_get_image(assembly);
-	if (image == nullptr) {
-		LOG(error, "fail to get server image");
-		return nullptr;
+	MonoAssembly *assembly;
+	MonoImage *image;
+	MonoClass *logic_class;
+	MonoObject *err;
+	mtk::Server *sv;
+
+	DO(domain_ = mono_jit_init("mtkdn"), "ev:fail to init domain");
+	DO(thread_ = mono_thread_attach(domain_), "ev:fail to attach thread");
+	DO(assembly = mono_domain_assembly_open(domain_, "Server.dll"), "ev:fail to load server assembly");
+	DO(image = mono_assembly_get_image(assembly), "ev:fail to get server image");
+	DO(logic_class = GetLogicClass(image), "ev:fail to get logic class");
+	{
+		//create server instance with logic class
+		MonoMethod *bootstrap, *build;
+		MonoClass *builder_class;
+		MonoObject *builder, *svptr;
+
+		DO(bootstrap = FindMethod(logic_class, "Bootstrap"), "fail ot get method bootstrap");
+
+		void *args[1] = { (void *)FromArgs(argc, argv) };
+		INVOKE(builder = mono_runtime_invoke(bootstrap, nullptr, args, &err), err, 
+				"ev:fail to call method logic::Bootstrap {} {}", (void *)builder, (void *)err);
+
+		//call builder to retrieve server pointer
+		DO(assembly = mono_domain_assembly_open(domain_, "Mtk.dll"), "ev:fail to load server assembly");
+		DO(image = mono_assembly_get_image(assembly), "ev:fail to get server image");
+		DO(builder_class = mono_class_from_name(image, "Mtk", "Core/ServerBuilder"), "ev:fail to get class Mtk.Core/ServerBuilder");
+		DO(build = FindMethod(builder_class, "Build"), "ev:fail to get build method");
+		INVOKE(svptr = mono_runtime_invoke(build, builder, nullptr, &err), err, 
+				"ev:fail to call method Mtk.Core.ServerBuilder.Build {} {}", (void *)builder, (void *)err)
+		DO(sv = (mtk::Server *)*(intptr_t *)mono_object_unbox(svptr), "bootstrap fail to create server");
 	}
 	{	
 		//create logic class
-		auto logic_class = GetLogicClass(image);
-		if (logic_class == nullptr) {
-			LOG(error, "fail to get logic class");
-			return nullptr;		
-		}
 		MonoMethod *factory;
-		if ((factory = FindMethod(logic_class, "Instance")) == nullptr) {
-			LOG(error, "logic class does not have factory method (Instance)");
-			return nullptr;
-		}
-		MonoObject *err = nullptr;
-		if ((logic_ = mono_runtime_invoke(factory, nullptr, nullptr, &err)) == nullptr || err != nullptr) {
-			LOG(error, "fail ot call method bootstrap {} {}", (void *)logic_, (void *)err);
-			DumpException(err);
-			return nullptr;
-		}
+
+		DO(factory = FindMethod(logic_class, "Instance"), "ev:fail to get method logic::Instance");
+		INVOKE(logic_ = mono_runtime_invoke(factory, nullptr, nullptr, &err), err, 
+			"ev:fail to call method logic::Instance {} {}", (void *)logic_, (void *)err);
+	
+		DO(close_ = FindMethod(logic_class, "OnClose"), "ev:fail to get method logic.OnClose");
+		DO(login_ = FindMethod(logic_class, "OnAccept"), "ev:fail to get method logic.OnAccept");
+		DO(handle_ = FindMethod(logic_class, "OnRecv"), "ev:fail to get method logic.OnRecv");
 	}
-	{
-		//create server instance with logic class
-		MonoMethod *bootstrap;
-		if ((bootstrap = FindMethod(entrypoint, "Bootstrap")) == nullptr) {
-			LOG(error, "fail ot get method bootstrap");
-			return nullptr;
-		}
-		MonoObject *svptr, *err = nullptr;
-		void *args[2] = { (void *)logic_, (void *)FromArgs(argc, argv) };
-		if ((svptr = mono_runtime_invoke(bootstrap, nullptr, args, &err)) == nullptr || err != nullptr) {
-			LOG(error, "fail ot call method bootstrap {} {}", (void *)svptr, (void *)err);
-			DumpException(err);
-			return nullptr;
-		}
-		mtk::Server *sv = (mtk::Server *)*(intptr_t *)mono_object_unbox(svptr);
-		if (sv == nullptr) {
-			LOG(error, "bootstrap fail to create server");
-			return nullptr;
-		}
-		//mono code does not seems to destroy MonoArray. its handled by gc?
-		LOG(info, "ev:mono handler init success,sv:{}", (void *)sv);
-		return &(sv->SetHandler(this));
-	}
+	//mono code does not seems to destroy MonoArray. its handled by gc?
+	LOG(info, "ev:mono handler init success,sv:{}", (void *)sv);
+	return &(sv->SetHandler(this));
+}
+void MonoHandler::Shutdown() {
+	([this] () -> void * {
+		LOG(info, "ev:start mono shutdown");
+		MonoAssembly *assembly;
+		MonoImage *image;
+		MonoClass *logic_class;
+		MonoObject *err, *tmp;
+		MonoMethod *shutdown;
+
+		DO(assembly = mono_domain_assembly_open(domain_, "Server.dll"), "ev:fail to load server assembly");
+		DO(image = mono_assembly_get_image(assembly), "ev:fail to get server image");
+		DO(logic_class = GetLogicClass(image), "ev:fail to get logic class");
+
+		DO(shutdown = FindMethod(logic_class, "Shutdown"), "ev:fail to get method logic.Shutdown");
+		INVOKE(tmp = mono_runtime_invoke(shutdown, logic_, nullptr, &err), err, 
+			"ev:fail to call method logic.Instance {} {}", (void *)logic_, (void *)err);	
+		LOG(info, "ev:mono shutdown success");
+	})();
 }
 void MonoHandler::TlsInit(Worker *w) {
 	thread_ = mono_thread_attach(domain_);
-	LOG(info, "ev:start worker thread,monoth:{},worker:{}", (void *)thread_, (void *)w);
+	LOG(info, "ev:start worker thread,th:{},worker:{}", (void *)thread_, (void *)w);
 }
 void MonoHandler::TlsFin(Worker *w) {
 	mono_thread_detach(thread_);
-	LOG(info, "ev:end worker thread,monoth:{},worker:{}", (void *)thread_, (void *)w);
+	LOG(info, "ev:end worker thread,th:{},worker:{}", (void *)thread_, (void *)w);
 }
 }

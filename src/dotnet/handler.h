@@ -22,7 +22,9 @@ class MonoHandler : public IHandler {
 	static thread_local MonoThread *thread_;
 public:
 	MonoHandler() {}
+	~MonoHandler() { Shutdown(); }
 	mtk::Server *Init(int argc, char *argv[]);
+	void Shutdown();
 
 	//below called from multiple thread.
 	void TlsInit(Worker *w);

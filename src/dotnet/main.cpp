@@ -11,5 +11,6 @@ int main(int argc, char *argv[]) {
 		return -1;
 	}
 	sv->Run();
+	delete h;
 	return 0;
 }
