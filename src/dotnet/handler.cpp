@@ -230,14 +230,19 @@ mtk::Server *MonoHandler::Init(int argc, char *argv[]) {
 	{	
 		//create logic class
 		MonoMethod *factory;
+		MonoClass *entrypoint_class;
 
 		DO(factory = FindMethod(logic_class, "Instance"), "ev:fail to get method logic::Instance");
 		INVOKE(logic_ = mono_runtime_invoke(factory, nullptr, nullptr, &err), err, 
 			"ev:fail to call method logic::Instance {} {}", (void *)logic_, (void *)err);
 	
-		DO(close_ = FindMethod(logic_class, "OnClose"), "ev:fail to get method logic.OnClose");
-		DO(login_ = FindMethod(logic_class, "OnAccept"), "ev:fail to get method logic.OnAccept");
-		DO(handle_ = FindMethod(logic_class, "OnRecv"), "ev:fail to get method logic.OnRecv");
+		DO(assembly = mono_domain_assembly_open(domain_, "Mtk.dll"), "ev:fail to load server assembly");
+		DO(image = mono_assembly_get_image(assembly), "ev:fail to get server image");
+		DO(entrypoint_class = mono_class_from_name(image, "Mtk", "EntryPoint"), "ev:fail to get class Mtk.EntryPoint");
+
+		DO(close_ = FindMethod(entrypoint_class, "Close"), "ev:fail to get method Mtk.EntryPoint.Close");
+		DO(login_ = FindMethod(entrypoint_class, "Login"), "ev:fail to get method Mtk.EntryPoint.Login");
+		DO(handle_ = FindMethod(entrypoint_class, "Handle"), "ev:fail to get method Mtk.EntryPoint.Handle");
 	}
 	//mono code does not seems to destroy MonoArray. its handled by gc?
 	LOG(info, "ev:mono handler init success,sv:{}", (void *)sv);
@@ -248,17 +253,17 @@ void MonoHandler::Shutdown() {
 		LOG(info, "ev:start mono shutdown");
 		MonoAssembly *assembly;
 		MonoImage *image;
-		MonoClass *logic_class;
+		MonoClass *entrypoint_class;
 		MonoObject *err, *tmp;
 		MonoMethod *shutdown;
 
-		DO(assembly = mono_domain_assembly_open(domain_, "Server.dll"), "ev:fail to load server assembly");
+		DO(assembly = mono_domain_assembly_open(domain_, "Mtk.dll"), "ev:fail to load server assembly");
 		DO(image = mono_assembly_get_image(assembly), "ev:fail to get server image");
-		DO(logic_class = GetLogicClass(image), "ev:fail to get logic class");
+		DO(entrypoint_class = mono_class_from_name(image, "Mtk", "EntryPoint"), "ev:fail to get class Mtk.EntryPoint");
 
-		DO(shutdown = FindMethod(logic_class, "Shutdown"), "ev:fail to get method logic.Shutdown");
-		INVOKE(tmp = mono_runtime_invoke(shutdown, logic_, nullptr, &err), err, 
-			"ev:fail to call method logic.Instance {} {}", (void *)logic_, (void *)err);	
+		DO(shutdown = FindMethod(entrypoint_class, "Shutdown"), "ev:fail to get method Mtk.EntryPoint.Shutdown");
+		INVOKE(tmp = mono_runtime_invoke(shutdown, &logic_, nullptr, &err), err, 
+			"ev:fail to call method Mtk.EntryPoint.Shutdown,logic:{},err:{}", (void *)logic_, (void *)err);	
 		LOG(info, "ev:mono shutdown success");
 	})();
 }

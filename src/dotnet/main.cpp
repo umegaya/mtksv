@@ -10,7 +10,6 @@ int main(int argc, char *argv[]) {
 		delete h;
 		return -1;
 	}
-	sv->Run();
-	delete h;
+	sv->Run(); //h will deleted in sv dtor
 	return 0;
 }

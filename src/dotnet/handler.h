@@ -72,7 +72,7 @@ public:
 		auto cid = creq.id();
 		auto data = creq.payload().data();
 		auto dlen = creq.payload().length();
-		LOG(info, "login payload len:{},p:{}", dlen, (void *)data);
+		LOG(info, "ev:login payload len:{},p:{}", dlen, (void *)data);
 		void *args[6] = {
 			/* logic, ulong cid, byte* data, uint len, out byte[] repdata */
 			(void *)logic_,
