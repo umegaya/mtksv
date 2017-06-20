@@ -243,35 +243,42 @@ mtk::Server *MonoHandler::Init(int argc, char *argv[]) {
 		DO(close_ = FindMethod(entrypoint_class, "Close"), "ev:fail to get method Mtk.EntryPoint.Close");
 		DO(login_ = FindMethod(entrypoint_class, "Login"), "ev:fail to get method Mtk.EntryPoint.Login");
 		DO(handle_ = FindMethod(entrypoint_class, "Handle"), "ev:fail to get method Mtk.EntryPoint.Handle");
+		DO(poll_ = FindMethod(entrypoint_class, "Poll"), "ev:fail to get method Mtk.EntryPoint.Poll");
 	}
 	//mono code does not seems to destroy MonoArray. its handled by gc?
 	LOG(info, "ev:mono handler init success,sv:{}", (void *)sv);
 	return &(sv->SetHandler(this));
 }
-void MonoHandler::Shutdown() {
-	([this] () -> void * {
+void MonoHandler::CallAdhocEntrypoint(const char *method) {
+	([this, method] () -> void * {
 		LOG(info, "ev:start mono shutdown");
 		MonoAssembly *assembly;
 		MonoImage *image;
 		MonoClass *entrypoint_class;
 		MonoObject *err, *tmp;
-		MonoMethod *shutdown;
+		MonoMethod *ep;
 
 		DO(assembly = mono_domain_assembly_open(domain_, "Mtk.dll"), "ev:fail to load server assembly");
 		DO(image = mono_assembly_get_image(assembly), "ev:fail to get server image");
 		DO(entrypoint_class = mono_class_from_name(image, "Mtk", "EntryPoint"), "ev:fail to get class Mtk.EntryPoint");
 
-		DO(shutdown = FindMethod(entrypoint_class, "Shutdown"), "ev:fail to get method Mtk.EntryPoint.Shutdown");
-		INVOKE(tmp = mono_runtime_invoke(shutdown, &logic_, nullptr, &err), err, 
-			"ev:fail to call method Mtk.EntryPoint.Shutdown,logic:{},err:{}", (void *)logic_, (void *)err);	
-		LOG(info, "ev:mono shutdown success");
+		DO(ep = FindMethod(entrypoint_class, method), "ev:fail to get method Mtk.EntryPoint.{}", method);
+		INVOKE(tmp = mono_runtime_invoke(ep, nullptr, (void **)&logic_, &err), err, 
+			"ev:fail to call method Mtk.EntryPoint.{},logic:{},err:{}", method, (void *)logic_, (void *)err);	
 	})();
+}
+void MonoHandler::Shutdown() {
+	LOG(info, "ev:start mono shutdown");
+	CallAdhocEntrypoint("Shutdown");
+	LOG(info, "ev:mono shutdown success");
 }
 void MonoHandler::TlsInit(Worker *w) {
 	thread_ = mono_thread_attach(domain_);
+	CallAdhocEntrypoint("TlsInit");
 	LOG(info, "ev:start worker thread,th:{},worker:{}", (void *)thread_, (void *)w);
 }
 void MonoHandler::TlsFin(Worker *w) {
+	CallAdhocEntrypoint("TlsFin");
 	mono_thread_detach(thread_);
 	LOG(info, "ev:end worker thread,th:{},worker:{}", (void *)thread_, (void *)w);
 }

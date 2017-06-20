@@ -18,7 +18,7 @@ namespace mtk {
 class MonoHandler : public IHandler {
 	MonoDomain *domain_;
 	MonoObject *logic_;
-	MonoMethod *login_, *handle_, *close_;
+	MonoMethod *login_, *handle_, *close_, *poll_;
 	static thread_local MonoThread *thread_;
 public:
 	MonoHandler() {}
@@ -93,6 +93,14 @@ public:
 		s.Put(mono_array_addr_with_size(a, 0, 0), mono_array_length(a));
 		return *(uint64_t *)mono_object_unbox(ret);
 	}
+	void Poll() override {
+		MonoObject *exc;
+		mono_runtime_invoke(poll_, nullptr, (void **)&logic_, &exc);
+		if (exc != nullptr) {
+			LOG(error, "ev:Close callback exception raised");
+			DumpException(exc);
+		}
+	}
 	Conn *NewConn(Worker *worker, IHandler *handler) {
 		return new Conn(worker, handler);
 	}
@@ -104,5 +112,6 @@ protected:
 	static MonoObject *CallVirtual(MonoObject *self, const char *method, void *args[], int n_args);
 	static MonoClass *GetLogicClass(MonoImage *image);
 	MonoArray *FromArgs(int argc, char *argv[]);
+	void CallAdhocEntrypoint(const char *method);
 };
 }
