@@ -21,7 +21,7 @@ class MonoHandler : public IHandler {
 	MonoMethod *login_, *handle_, *close_, *poll_;
 	static thread_local MonoThread *thread_;
 public:
-	MonoHandler() {}
+	MonoHandler() : logic_(nullptr) {}
 	~MonoHandler() { Shutdown(); }
 	mtk::Server *Init(int argc, char *argv[]);
 	void Shutdown();
@@ -68,19 +68,18 @@ public:
 			LOG(error, "ev:Login callback invalid payload");
 			return 0;
 		}
-		MonoObject *obj;
+		//MonoObject *obj;
 		auto cid = creq.id();
 		auto data = creq.payload().data();
 		auto dlen = creq.payload().length();
-		LOG(info, "ev:login payload len:{},p:{}", dlen, (void *)data);
-		void *args[6] = {
+		void *args[5] = {
 			/* logic, ulong cid, byte* data, uint len, out byte[] repdata */
 			(void *)logic_,
 			(void *)&c,
 			(void *)&cid,
 			(void *)data,
 			(void *)&dlen,
-			(void *)&obj,
+			//(void *)&obj,
 		};
 		MonoObject *exc, *ret = mono_runtime_invoke(login_, nullptr, args, &exc);
 		if (exc != nullptr) {
@@ -89,8 +88,8 @@ public:
 			mtk_svconn_close(c);
 			return 0;
 		}
-		MonoArray *a = (MonoArray *)obj;
-		s.Put(mono_array_addr_with_size(a, 0, 0), mono_array_length(a));
+		/*MonoArray *a = (MonoArray *)obj;
+		s.Put(mono_array_addr_with_size(a, 0, 0), mono_array_length(a));*/
 		return *(uint64_t *)mono_object_unbox(ret);
 	}
 	void Poll() override {
@@ -112,6 +111,7 @@ protected:
 	static MonoObject *CallVirtual(MonoObject *self, const char *method, void *args[], int n_args);
 	static MonoClass *GetLogicClass(MonoImage *image);
 	MonoArray *FromArgs(int argc, char *argv[]);
+	void DeleteMonoArray(MonoArray *a);
 	void CallAdhocEntrypoint(const char *method);
 };
 }

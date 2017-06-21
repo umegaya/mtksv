@@ -36,7 +36,7 @@ mtk:
 builder-dotnet:
 	$(call build_builder,dotnet)
 
-compile-dotnet: mtk
+compile-dotnet:
 	$(call compile,dotnet)
 
 runtime-dotnet:

@@ -28,6 +28,15 @@ namespace mtk {
 		return nullptr; \
 	} \
 }
+#define INVOKE_VOID(stmt, err, ...) { \
+	err = nullptr; \
+	(stmt); \
+	if (err != nullptr) { \
+		LOG(error, __VA_ARGS__); \
+		DumpException(err); \
+		return nullptr; \
+	} \
+}
 
 thread_local MonoThread *MonoHandler::thread_;
 
@@ -109,6 +118,13 @@ MonoArray *MonoHandler::FromArgs(int argc, char *argv[]) {
 		mono_array_set(a, MonoString*, i, str);
 	}
 	return a;
+}
+void MonoHandler::DeleteMonoArray(MonoArray *a) {
+	//TODO: how to do this? or GC do the job? (but how to know that C++ side no more need allocated object...)
+	/*for (int i = 0; i < mono_array_length(a); i++) {
+		mono_string_destroy(mono_array_get(a, MonoString *, i));
+	}
+	mono_array_destroy(a);*/
 }
 MonoObject *MonoHandler::CallVirtual(MonoObject *self, const char *method, void *args[], int n_args) {
 	auto klass = mono_object_get_class(self);
@@ -212,11 +228,12 @@ mtk::Server *MonoHandler::Init(int argc, char *argv[]) {
 		MonoClass *builder_class;
 		MonoObject *builder, *svptr;
 
-		DO(bootstrap = FindMethod(logic_class, "Bootstrap"), "fail ot get method bootstrap");
+		DO(bootstrap = FindMethod(logic_class, "Bootstrap"), "fail to get method bootstrap");
 
 		void *args[1] = { (void *)FromArgs(argc, argv) };
 		INVOKE(builder = mono_runtime_invoke(bootstrap, nullptr, args, &err), err, 
 				"ev:fail to call method logic::Bootstrap {} {}", (void *)builder, (void *)err);
+		DeleteMonoArray((MonoArray *)args[0]);
 
 		//call builder to retrieve server pointer
 		DO(assembly = mono_domain_assembly_open(domain_, "Mtk.dll"), "ev:fail to load server assembly");
@@ -251,11 +268,11 @@ mtk::Server *MonoHandler::Init(int argc, char *argv[]) {
 }
 void MonoHandler::CallAdhocEntrypoint(const char *method) {
 	([this, method] () -> void * {
-		LOG(info, "ev:start mono shutdown");
+		LOG(info, "ev:call entrypoint,method:{}", method);
 		MonoAssembly *assembly;
 		MonoImage *image;
 		MonoClass *entrypoint_class;
-		MonoObject *err, *tmp;
+		MonoObject *err;
 		MonoMethod *ep;
 
 		DO(assembly = mono_domain_assembly_open(domain_, "Mtk.dll"), "ev:fail to load server assembly");
@@ -263,13 +280,16 @@ void MonoHandler::CallAdhocEntrypoint(const char *method) {
 		DO(entrypoint_class = mono_class_from_name(image, "Mtk", "EntryPoint"), "ev:fail to get class Mtk.EntryPoint");
 
 		DO(ep = FindMethod(entrypoint_class, method), "ev:fail to get method Mtk.EntryPoint.{}", method);
-		INVOKE(tmp = mono_runtime_invoke(ep, nullptr, (void **)&logic_, &err), err, 
+		void *args[1] = {(void *)logic_};
+		INVOKE_VOID(mono_runtime_invoke(ep, nullptr, args, &err), err, 
 			"ev:fail to call method Mtk.EntryPoint.{},logic:{},err:{}", method, (void *)logic_, (void *)err);	
 	})();
 }
 void MonoHandler::Shutdown() {
-	LOG(info, "ev:start mono shutdown");
-	CallAdhocEntrypoint("Shutdown");
+	LOG(info, "ev:start mono shutdown");	
+	if (logic_ != nullptr) {
+		CallAdhocEntrypoint("Shutdown");
+	}
 	LOG(info, "ev:mono shutdown success");
 }
 void MonoHandler::TlsInit(Worker *w) {
