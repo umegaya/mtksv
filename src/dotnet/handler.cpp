@@ -113,9 +113,10 @@ MonoMethod *MonoHandler::FindMethod(MonoClass *klass, const std::string &name) {
 }
 MonoArray *MonoHandler::FromArgs(int argc, char *argv[]) {
 	auto *a = mono_array_new(domain_, mono_get_string_class(), argc);
-	for (int i = 0; i < argc; i++) {
+	//skip 0 to match with c#'s argv, argc'
+	for (int i = 1; i < argc; i++) {
 		auto *str = mono_string_new(domain_, argv[i]);
-		mono_array_set(a, MonoString*, i, str);
+		mono_array_set(a, MonoString*, i - 1, str);
 	}
 	return a;
 }
@@ -246,7 +247,7 @@ mtk::Server *MonoHandler::Init(int argc, char *argv[]) {
 	}
 	{	
 		//create logic class
-		MonoMethod *factory;
+		MonoMethod *factory, *initializer;
 		MonoClass *entrypoint_class;
 
 		DO(factory = FindMethod(logic_class, "Instance"), "ev:fail to get method logic::Instance");
@@ -261,6 +262,9 @@ mtk::Server *MonoHandler::Init(int argc, char *argv[]) {
 		DO(login_ = FindMethod(entrypoint_class, "Login"), "ev:fail to get method Mtk.EntryPoint.Login");
 		DO(handle_ = FindMethod(entrypoint_class, "Handle"), "ev:fail to get method Mtk.EntryPoint.Handle");
 		DO(poll_ = FindMethod(entrypoint_class, "Poll"), "ev:fail to get method Mtk.EntryPoint.Poll");
+		DO(initializer = FindMethod(entrypoint_class, "Initialize"), "ev:fail to get method Mtk.EntryPoint.Initialize");
+		void *args[2] = { logic_, &sv };
+		INVOKE_VOID(mono_runtime_invoke(initializer, nullptr, args, &err), err, "fail to initialize Logic instance");
 	}
 	//mono code does not seems to destroy MonoArray. its handled by gc?
 	LOG(info, "ev:mono handler init success,sv:{}", (void *)sv);
