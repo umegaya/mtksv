@@ -8,7 +8,7 @@ LIB=$(OUTDIR)/libserver.so
 # build server logic assemly
 MCSFLAGS=-unsafe -t:library -define:MTKSV
 CODE=/codes
-MTK_DEPS=$(shell find $(CODE)/Mtk/Ext -name '*.dll')
+MTK_DEPS=$(shell find $(CODE)/Mtk/Ext/*/lib/net4* -name '*.dll')
 MTK_DEPS_FLAGS=$(addprefix -r:,$(MTK_DEPS))
 MTK_DLL=$(OUTDIR)/Mtk.dll
 MTK_SRC=$(shell ls $(CODE)/Mtk/*.cs)

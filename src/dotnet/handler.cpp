@@ -1,6 +1,7 @@
 #include "handler.h"
 #include "mtk/src/mtk.h"
 #include <stdlib.h>
+#include <mono/metadata/mono-config.h>
 
 extern "C" {
 	void mono_object_describe_fields (MonoObject *obj);
@@ -209,6 +210,8 @@ void MonoHandler::DumpException(MonoObject *exc) {
 	}
 }
 mtk::Server *MonoHandler::Init(int argc, char *argv[]) {
+	mono_config_parse(nullptr);
+	mono_runtime_set_main_args(argc, argv);
 	mono_mkbundle_init();
 	AddInternalCalls();
 
@@ -219,6 +222,7 @@ mtk::Server *MonoHandler::Init(int argc, char *argv[]) {
 	mtk::Server *sv;
 
 	DO(domain_ = mono_jit_init("mtkdn"), "ev:fail to init domain");
+	mono_domain_set_config(domain_, "/etc/mono", "config");
 	DO(thread_ = mono_thread_attach(domain_), "ev:fail to attach thread");
 	DO(assembly = mono_domain_assembly_open(domain_, "Server.dll"), "ev:fail to load server assembly");
 	DO(image = mono_assembly_get_image(assembly), "ev:fail to get server image");
